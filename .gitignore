@@ -1,0 +1,9 @@
+# personal planning — not for the public repo
+docs/
+
+# standard ignores
+.venv/
+__pycache__/
+data/
+*.parquet
+.env
