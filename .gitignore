@@ -7,3 +7,16 @@ __pycache__/
 data/
 *.parquet
 .env
+
+# python packaging / tooling
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/

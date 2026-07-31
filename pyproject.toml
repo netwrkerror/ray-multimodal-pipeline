@@ -1,0 +1,36 @@
+[project]
+name = "ray-multimodal-pipeline"
+version = "0.1.0"
+description = "Distributed multimodal (camera + lidar) sensor-data pipeline built on Ray: ingest, preprocess, batch inference, and structured output."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ray[data]>=2.9",
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "pyarrow>=15.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ray_multimodal_pipeline"]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
