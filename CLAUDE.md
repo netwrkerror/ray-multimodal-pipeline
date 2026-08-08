@@ -1,49 +1,38 @@
 # CLAUDE.md — ray-multimodal-pipeline
 
-## What this project is
-A distributed multimodal sensor-data processing pipeline built on **Ray**, as a portfolio piece for
-ML platform/infrastructure roles with a physical-AI lean (robotics / AV / drones). It ingests
-multimodal autonomous-driving data (camera + lidar + metadata), preprocesses it, runs pretrained
-model inference as a batch stage, and writes structured outputs. The point of the project is to
-demonstrate **distributed-systems / infra engineering**, not modeling.
+## Overview
+A distributed multimodal sensor-data processing pipeline built on Ray. Ingests multimodal
+autonomous-driving data (camera + lidar + metadata), preprocesses it, runs pretrained model
+inference as a batch stage, and writes structured outputs. Focus: distributed data/compute
+engineering with reproducible performance measurement.
 
-Full phased plan lives in `docs/ray-ml-infra-ramp-plan.md`. Read it for phase goals and definitions of done.
+## Core constraints
+- **Pretrained models only.** Use a pretrained detector (torchvision / YOLO variant); no training
+  from scratch. The focus is the pipeline, not the weights.
+- **Ray for the compute layer.** Ray Core, Ray Data (primary), Ray Serve, RLlib. No Spark/Dask.
+- **Measurement is a deliverable.** Every scaling change records throughput (records/sec),
+  GPU utilization, and wall-clock in the README's before/after table.
 
-## Core constraints (do not drift from these)
-- **Orchestration, not modeling.** Always use *pretrained* models (torchvision detection / a YOLO
-  variant). Never train a model from scratch — the value story is the pipeline, not the weights.
-- **Measurement is a first-class deliverable.** Every scaling change must produce numbers:
-  throughput (records/sec), GPU utilization, wall-clock. These go in the README as a before/after table.
-- **Stay in Ray's ecosystem** for the compute layer: Ray Core, Ray Data (primary), Ray Serve (later),
-  RLlib (final phase). Don't reach for Spark/Dask here — the point is to demonstrate Ray.
+## Compute & GPU
+- Local dev: Apple Silicon GPU via PyTorch MPS for iteration and functional testing.
+- Scale-out + measurement: managed Ray on CUDA GPUs.
+- Ray's `num_gpus` scheduling is CUDA-only — it does not see the Apple GPU. Therefore:
+  - Inference stages are **device-agnostic**: select `cuda` → `mps` → `cpu` via one helper. Never hardcode.
+  - Ray GPU scheduling (`num_gpus`) is used only on the CUDA cluster.
+  - Local runs yield CPU-parallelism numbers; label them as such (GPU-utilization requires CUDA).
 
 ## Tech stack
 - Python 3.11+, Ray (Data / Core / Serve / RLlib), PyTorch (inference only), PyArrow/Parquet.
-- Dataset: nuScenes mini split (or KITTI as a simpler fallback).
-- Tooling: `uv` or `venv`, `ruff` for lint/format, `pytest` for tests.
+- Dataset: nuScenes mini split (KITTI fallback).
+- Tooling: `uv`/`venv`, `ruff`, `pytest`.
 
-## Git workflow — I run git myself; you provide the artifacts
-The human owns all git operations (branching, staging, commits, PRs, merges). Never run
-git commands. Instead, for each feature provide:
-- A **branch name** (`feat/…`, `fix/…`, etc.) to create from `main`.
-- **Conventional Commit message(s)** — if a feature is several logical commits, give the
-  sequence with which files go in each.
-- A **PR title and description** (what changed, why, and any measurement numbers).
-Work one feature at a time. When the code is ready, stop and hand me the branch name +
-commit plan + PR text, then wait while I create the branch, commit, and open the PR myself.
-Never commit secrets, dataset blobs, or large artifacts. Keep `.gitignore` current
-(data/, .venv/, __pycache__/, *.parquet outputs, cloud creds).
+## Conventions
+- One feature per branch (`feat/…`, `fix/…`); small, atomic commits with Conventional Commits messages.
+- Keep pipeline stages small, testable, composable (`map_batches`-friendly).
+- Type hints on public functions; docstrings on modules and stages.
+- A `pytest` test for each stage's transform logic where practical.
+- README stays current: architecture diagram, how-to-run, measurement table.
+- Never commit secrets, dataset blobs, or large artifacts; keep `.gitignore` current.
 
-## Code standards
-- Type hints on public functions. Docstrings on modules and pipeline stages.
-- Keep pipeline stages as small, testable, composable functions (`map_batches`-friendly).
-- A `pytest` test for each stage's transform logic where it's practical (pure functions first).
-- README stays current: architecture diagram, how-to-run, and the measurement table.
-
-## How to work with me on this
-- Before starting a feature, restate the plan for it and wait for confirmation if scope is ambiguous.
-- Implement one feature at a time; don't jump ahead to later phases.
-- After each feature: run lint + tests, update the README if behavior changed, then hand me the
-  branch name, commit plan, and PR description (see git workflow above).
-- When a design decision has real tradeoffs (e.g., actor vs task, batch size, CPU/GPU split),
-  surface it and ask rather than silently picking.
+## Local, personal overrides (workflow / positioning) — imported if present, gitignored
+@CLAUDE.local.md

@@ -1,5 +1,7 @@
-# personal planning — not for the public repo
+# personal planning
 docs/
+CLAUDE.local.md
+DECISIONS.md
 
 # standard ignores
 .venv/
