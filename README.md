@@ -5,7 +5,8 @@ It ingests autonomous-driving sensor data (camera + lidar + metadata), preproces
 runs pretrained-model batch inference, and writes structured output — as a demonstration of
 distributed-systems / ML-infra engineering on Ray, not of modeling.
 
-**Status:** scaffolding — pipeline stages not yet implemented.
+**Status:** ingest + preprocess stages implemented (decode, resize, normalize). Batch inference
+and Parquet output are next.
 
 ## Why this exists
 
@@ -30,9 +31,13 @@ _Diagram is a placeholder — will be refined as stages land and scaling is adde
 ## Project layout
 
 ```
-src/ray_multimodal_pipeline/   # pipeline package (stages added incrementally)
-tests/                          # pytest — one test per stage's transform logic
-data/                           # local dataset cache, gitignored — see Dataset setup below
+src/ray_multimodal_pipeline/
+  manifest.py     # driver-side: nuScenes sample/sample_data tables -> list[dict]
+  ingest.py        # manifest -> Ray Dataset (ray.data.from_items)
+  preprocess.py    # decode / resize / normalize camera images, load lidar sweeps
+  pipeline.py      # wires manifest -> ingest -> preprocess, CLI entry point
+tests/                           # pytest — one test per stage's transform logic
+data/                            # local dataset cache, gitignored — see Dataset setup below
 ```
 
 ## Setup
@@ -65,10 +70,8 @@ locally into `data/`; the directory is gitignored so nothing here is ever commit
    mkdir -p data/nuscenes
    tar -xzf v1.0-mini.tgz -C data/nuscenes
    ```
-4. Install the devkit for loading/inspecting the data:
-   ```bash
-   uv add --group dev nuscenes-devkit
-   ```
+4. `nuscenes-devkit` is already a project dependency (installed by `uv sync`), so no extra
+   install is needed.
 5. Sanity-check the download:
    ```bash
    uv run python -c "
@@ -81,8 +84,14 @@ locally into `data/`; the directory is gitignored so nothing here is ever commit
 
 ## How to run
 
-_Coming in Phase 1: `uv run python -m ray_multimodal_pipeline.pipeline` (or similar) once the
-ingest/preprocess/inference stages are implemented._
+Ingest nuScenes-mini and run the decode/resize/normalize preprocessing stage:
+
+```bash
+uv run python -m ray_multimodal_pipeline.pipeline --dataroot data/nuscenes --version v1.0-mini
+```
+
+Prints the resulting dataset's schema and record count. Batch inference and Parquet output land
+in the next stage.
 
 ## Measurement
 
@@ -95,8 +104,8 @@ Phase 2 deliverable — single-node vs Ray-parallelized runs, filled in once sca
 
 ## Roadmap
 
-- [x] Phase 1 (Weekend 1): project scaffold
-- [ ] Phase 1 (Weekend 1): Ray Data ingest/preprocess pipeline
-- [ ] Phase 1 (Weekend 2): batch-inference stage + Parquet write
+- [x] Phase 1: project scaffold
+- [x] Phase 1: Ray Data ingest/preprocess pipeline
+- [ ] Phase 1: batch-inference stage + Parquet write
 - [ ] Phase 2: scale out + measurement
 - [ ] Phase 3: RLlib/sim slice + write-up
