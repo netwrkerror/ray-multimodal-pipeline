@@ -1,9 +1,11 @@
+import os
+
 from ray_multimodal_pipeline.manifest import build_manifest
 
 
 class _FakeNuScenes:
-    def __init__(self) -> None:
-        self.dataroot = "/data/nuscenes"
+    def __init__(self, dataroot: str = "/data/nuscenes") -> None:
+        self.dataroot = dataroot
         self.sample = [
             {
                 "token": "sample-0",
@@ -45,3 +47,13 @@ def test_build_manifest_maps_samples_to_paths() -> None:
             "timestamp": 2000,
         },
     ]
+
+
+def test_build_manifest_absolutizes_relative_dataroot() -> None:
+    """Ray workers run from their own cwd, so manifest paths must not stay relative."""
+    manifest = build_manifest(_FakeNuScenes(dataroot="data/nuscenes"))
+
+    for record in manifest:
+        assert os.path.isabs(record["cam_front_path"])
+        assert os.path.isabs(record["lidar_top_path"])
+    assert manifest[0]["cam_front_path"] == os.path.abspath("data/nuscenes/samples/CAM_FRONT/0.jpg")
