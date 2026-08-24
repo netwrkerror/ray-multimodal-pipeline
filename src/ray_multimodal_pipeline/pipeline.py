@@ -26,7 +26,9 @@ def main() -> None:
     parser.add_argument("--version", default="v1.0-mini")
     args = parser.parse_args()
 
-    dataset = run(args.dataroot, args.version)
+    # Ray Data is lazy: materialize once so schema() and count() below don't each
+    # trigger a separate full execution of the preprocessing stage.
+    dataset = run(args.dataroot, args.version).materialize()
     print(dataset.schema())
     print(f"{dataset.count()} records preprocessed")
 

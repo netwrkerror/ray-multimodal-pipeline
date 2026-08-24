@@ -24,7 +24,13 @@ class NuScenesLike(Protocol):
 
 
 def build_manifest(nusc: NuScenesLike) -> list[dict]:
-    """Build one record per sample: token, camera/lidar file paths, timestamp."""
+    """Build one record per sample: token, camera/lidar file paths, timestamp.
+
+    Paths are absolutized here on the driver: Ray workers execute from their own
+    runtime working directory, so a path relative to the driver's cwd would not
+    resolve inside the worker.
+    """
+    dataroot = os.path.abspath(nusc.dataroot)
     manifest = []
     for sample in nusc.sample:
         cam_data = nusc.get("sample_data", sample["data"][CAMERA_CHANNEL])
@@ -32,8 +38,8 @@ def build_manifest(nusc: NuScenesLike) -> list[dict]:
         manifest.append(
             {
                 "sample_token": sample["token"],
-                "cam_front_path": os.path.join(nusc.dataroot, cam_data["filename"]),
-                "lidar_top_path": os.path.join(nusc.dataroot, lidar_data["filename"]),
+                "cam_front_path": os.path.join(dataroot, cam_data["filename"]),
+                "lidar_top_path": os.path.join(dataroot, lidar_data["filename"]),
                 "timestamp": sample["timestamp"],
             }
         )
