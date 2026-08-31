@@ -42,20 +42,59 @@ def load_lidar_points(path: str) -> np.ndarray:
     return np.fromfile(path, dtype=np.float32).reshape(-1, LIDAR_POINT_DIM)
 
 
+def summarize_lidar_points(points: np.ndarray) -> dict[str, float | int]:
+    """Reduce a lidar sweep to flat scalar features.
+
+    Summarizing here lets the pipeline drop the raw sweep (~700KB/record) before the
+    inference stage, which never reads it — only these derived features reach the output.
+    """
+    if points.shape[0] == 0:
+        return {
+            "lidar_num_points": 0,
+            "lidar_mean_range_m": 0.0,
+            "lidar_max_range_m": 0.0,
+            "lidar_mean_intensity": 0.0,
+            "lidar_z_min_m": 0.0,
+            "lidar_z_max_m": 0.0,
+        }
+
+    xyz = points[:, :3]
+    ranges = np.linalg.norm(xyz, axis=1)
+    return {
+        "lidar_num_points": int(points.shape[0]),
+        "lidar_mean_range_m": float(ranges.mean()),
+        "lidar_max_range_m": float(ranges.max()),
+        "lidar_mean_intensity": float(points[:, 3].mean()),
+        "lidar_z_min_m": float(xyz[:, 2].min()),
+        "lidar_z_max_m": float(xyz[:, 2].max()),
+    }
+
+
+LIDAR_FEATURE_COLUMNS = (
+    "lidar_num_points",
+    "lidar_mean_range_m",
+    "lidar_max_range_m",
+    "lidar_mean_intensity",
+    "lidar_z_min_m",
+    "lidar_z_max_m",
+)
+
+
 def preprocess_batch(batch: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """Ray Data `map_batches` entry point: decode/resize/normalize images, load lidar points."""
+    """Ray Data `map_batches` entry point: decode/resize/normalize images, summarize lidar."""
     images = []
-    lidar_points = np.empty(len(batch["cam_front_path"]), dtype=object)
-    for i, (cam_path, lidar_path) in enumerate(
-        zip(batch["cam_front_path"], batch["lidar_top_path"], strict=True)
-    ):
+    lidar_features: dict[str, list] = {column: [] for column in LIDAR_FEATURE_COLUMNS}
+    for cam_path, lidar_path in zip(batch["cam_front_path"], batch["lidar_top_path"], strict=True):
         image = decode_camera_image(cam_path)
         images.append(resize_and_normalize(image).numpy())
-        lidar_points[i] = load_lidar_points(lidar_path)
+
+        summary = summarize_lidar_points(load_lidar_points(lidar_path))
+        for column in LIDAR_FEATURE_COLUMNS:
+            lidar_features[column].append(summary[column])
 
     return {
         "sample_token": batch["sample_token"],
         "timestamp": batch["timestamp"],
         "image": np.stack(images),
-        "lidar_points": lidar_points,
+        **{column: np.array(values) for column, values in lidar_features.items()},
     }

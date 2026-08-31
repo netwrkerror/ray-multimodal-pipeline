@@ -1,13 +1,16 @@
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
 from ray_multimodal_pipeline.preprocess import (
     DEFAULT_IMAGE_SIZE,
+    LIDAR_FEATURE_COLUMNS,
     decode_camera_image,
     load_lidar_points,
     preprocess_batch,
     resize_and_normalize,
+    summarize_lidar_points,
 )
 
 
@@ -71,5 +74,50 @@ def test_preprocess_batch_produces_expected_columns(tmp_path) -> None:
 
     assert list(out["sample_token"]) == ["tok-0", "tok-1"]
     assert out["image"].shape == (2, 3, *DEFAULT_IMAGE_SIZE)
-    assert out["lidar_points"][0].shape == (5, 5)
-    assert out["lidar_points"][1].shape == (5, 5)
+    assert list(out["lidar_num_points"]) == [5, 5]
+    for column in LIDAR_FEATURE_COLUMNS:
+        assert len(out[column]) == 2
+
+
+def test_preprocess_batch_drops_raw_lidar_points(tmp_path) -> None:
+    """Raw sweeps are ~700KB/record and unread downstream — only summaries propagate."""
+    cam_path = tmp_path / "cam.jpg"
+    lidar_path = tmp_path / "lidar.bin"
+    _write_camera_image(cam_path)
+    _write_lidar_sweep(lidar_path, num_points=5)
+
+    out = preprocess_batch(
+        {
+            "sample_token": np.array(["tok-0"]),
+            "timestamp": np.array([100]),
+            "cam_front_path": np.array([str(cam_path)]),
+            "lidar_top_path": np.array([str(lidar_path)]),
+        }
+    )
+
+    assert "lidar_points" not in out
+
+
+def test_summarize_lidar_points_computes_ranges() -> None:
+    points = np.array(
+        [
+            [3.0, 4.0, 1.0, 10.0, 0.0],  # range 5 (3-4-5 triangle with z=0 plane)
+            [0.0, 0.0, 2.0, 20.0, 0.0],  # range 2
+        ],
+        dtype=np.float32,
+    )
+
+    summary = summarize_lidar_points(points)
+
+    assert summary["lidar_num_points"] == 2
+    assert summary["lidar_max_range_m"] == pytest.approx(np.sqrt(26.0))
+    assert summary["lidar_mean_intensity"] == pytest.approx(15.0)
+    assert summary["lidar_z_min_m"] == pytest.approx(1.0)
+    assert summary["lidar_z_max_m"] == pytest.approx(2.0)
+
+
+def test_summarize_lidar_points_handles_empty_sweep() -> None:
+    summary = summarize_lidar_points(np.empty((0, 5), dtype=np.float32))
+
+    assert summary["lidar_num_points"] == 0
+    assert summary["lidar_max_range_m"] == 0.0
