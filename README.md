@@ -6,7 +6,8 @@ runs pretrained-model batch inference, and writes structured output — as a dem
 distributed-systems / ML-infra engineering on Ray, not of modeling.
 
 **Status:** Phase 1 complete — the pipeline reads, preprocesses, runs batch inference, and writes
-Parquet. Scaling and measurement (Phase 2) are next.
+Parquet. Phase 2 in progress: the measurement harness and single-node baseline are in place; the
+CUDA multi-GPU scale-out run is next.
 
 ## Why this exists
 
@@ -46,6 +47,7 @@ src/ray_multimodal_pipeline/
   preprocess.py    # decode / resize / normalize camera images, summarize lidar sweeps
   inference.py     # DetectionPredictor actor: pretrained Faster R-CNN over image batches
   pipeline.py      # wires the stages together, CLI entry point
+  benchmark.py     # measurement harness: config sweep, resource sampling, results table
 tests/                           # pytest — one test per stage's transform logic
 data/                            # dataset + outputs, gitignored — see Dataset setup below
 ```
@@ -146,22 +148,39 @@ output files without a single shared schema.
 
 ## Measurement
 
-Phase 2 deliverable. One reference point exists so far, from the first full Phase 1 run:
+Baseline throughput on a single node (Apple M-series, 15 CPUs, one integrated GPU), full 404-record
+dataset, measured ingest-through-inference:
 
-| Config | Records/sec | Wall-clock | GPU utilization | Notes |
-|--------|-------------|------------|-----------------|-------|
-| Local, MPS, 2 actors, batch 8 | 3.8 | 106s (404 records) | not yet instrumented | Faster R-CNN ResNet50-FPN, warm weights cache |
-| Single-node baseline | — | — | — | Phase 2 |
-| Ray-parallelized (scaled) | — | — | — | Phase 2 |
+| Config | Records/sec | Wall-clock | CPU util (mean/peak) | GPU util |
+|--------|-------------|------------|----------------------|----------|
+| Ray, 2 actors | 4.59 | 88.1s | 5.8% / 55.2% | n/a (MPS) |
+| Sequential (no Ray) | 4.46 | 90.6s | 5.3% / 34.4% | n/a (MPS) |
+| Ray, 1 actor | 4.34 | 93.2s | 7.7% / 89.3% | n/a (MPS) |
 
-Treat the first row as a smoke-test datapoint, not a benchmark: it is a single unrepeated run on a
-laptop with no GPU instrumentation, and the concurrency/batch-size defaults are untuned. Phase 2
-replaces it with repeated runs across a real sweep.
+Reproduce with:
+
+```bash
+uv run python -m ray_multimodal_pipeline.benchmark --limit 404 --repeats 1 \
+  --concurrency-grid 1,2,4 --batch-size-grid 4 --preprocess-grid 15
+```
+
+**These rows are statistically indistinguishable** — a 5% spread inside a ~27% measured noise
+floor. That is the expected result on one GPU: actors can be scheduled independently but all issue
+work to the same device, so this establishes a baseline rather than demonstrating scale-out. The
+scale-out numbers require the CUDA cluster and are the outstanding Phase 2 item.
+
+One finding is actionable today: **batch size is a cliff, not a curve.** Batch 16 runs 8.8x slower
+than batch 4 (778.9s vs 88.1s) as the working set outgrows unified memory, so the default of 8 sits
+deliberately below it.
+
+Full methodology, the CPU-device sweep, and caveats are in **[MEASUREMENT.md](MEASUREMENT.md)**.
 
 ## Roadmap
 
 - [x] Phase 1: project scaffold
 - [x] Phase 1: Ray Data ingest/preprocess pipeline
 - [x] Phase 1: batch-inference stage + Parquet write
-- [ ] Phase 2: scale out + measurement
+- [x] Phase 2: measurement harness + single-node baseline
+- [ ] Phase 2: scale out on CUDA (multi-GPU) and re-run the sweep
+- [ ] Phase 2: one real-world wrinkle (backpressure / failed task / CPU-GPU split)
 - [ ] Phase 3: RLlib/sim slice + write-up

@@ -39,16 +39,23 @@ def run(
     score_threshold: float = DEFAULT_SCORE_THRESHOLD,
     batch_size: int = DEFAULT_INFERENCE_BATCH_SIZE,
     concurrency: int = DEFAULT_INFERENCE_CONCURRENCY,
+    preprocess_concurrency: int | None = None,
     limit: int | None = None,
 ) -> ray.data.Dataset:
-    """Ingest nuScenes-mini, preprocess, and run pretrained detection over camera frames."""
+    """Ingest nuScenes-mini, preprocess, and run pretrained detection over camera frames.
+
+    `preprocess_concurrency` caps concurrent decode/resize tasks; None lets Ray Data
+    size the task pool itself. It is exposed so the benchmark harness can sweep it.
+    """
     nusc = NuScenes(version=version, dataroot=dataroot, verbose=False)
     manifest = build_manifest(nusc)
     if limit is not None:
         manifest = manifest[:limit]
 
     dataset = build_ingest_dataset(manifest)
-    dataset = dataset.map_batches(preprocess_batch, batch_format="numpy")
+    dataset = dataset.map_batches(
+        preprocess_batch, batch_format="numpy", concurrency=preprocess_concurrency
+    )
     return dataset.map_batches(
         DetectionPredictor,
         batch_format="numpy",
@@ -67,6 +74,12 @@ def main() -> None:
     parser.add_argument("--score-threshold", type=float, default=DEFAULT_SCORE_THRESHOLD)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_INFERENCE_BATCH_SIZE)
     parser.add_argument("--concurrency", type=int, default=DEFAULT_INFERENCE_CONCURRENCY)
+    parser.add_argument(
+        "--preprocess-concurrency",
+        type=int,
+        default=None,
+        help="cap concurrent decode/resize tasks (default: Ray Data decides)",
+    )
     parser.add_argument("--limit", type=int, default=None, help="process only the first N samples")
     args = parser.parse_args()
 
@@ -77,6 +90,7 @@ def main() -> None:
         score_threshold=args.score_threshold,
         batch_size=args.batch_size,
         concurrency=args.concurrency,
+        preprocess_concurrency=args.preprocess_concurrency,
         limit=args.limit,
     )
 
